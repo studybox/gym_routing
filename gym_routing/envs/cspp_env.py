@@ -2,63 +2,44 @@ import math
 import numpy as np
 import networkx as nx
 import gym
+import h5py
 from gym import error, spaces, utils
 from gym.utils import seeding
 MAX_ARRAY_LENGTH = 100
+class ProblemInstance:
+    def __init__(self, route, traffic):
+        
+            
 class Problem:
-    def __init__(self, input):
-        if input[1] = None:
-            # random graph
-            self.num_nodes = input[0]
-            
-            self.primalbound = np.inf
-            self.r1star = np.inf
-            self.finalpath = []
-            self.graph = nx.DiGraph()
-            
-            self.r1 = 'r1'
-            self.cost = 'cost'
-            H = nx.grid_2d_graph(self.num_nodes/4,4).to_directed()
-            node_dict = {}
-            for (idx, node) in enumerate(H.nodes):
-                node_dict[node] = idx
-                self.graph.add_node(idx,visited=0,r11=np.inf,r12=np.inf,r13=np.inf,c1=np.inf,c2=np.inf,c3=np.inf)
-            for (u, v) in H.edges:
-                res1 = np.random.random()
-                cost = np.random.random()
-                self.graph.add_edge(node_dict[u],node_dict[v])
-                self.graph[node_dict[u]][node_dict[v]][self.r1] = res1
-                self.graph[node_dict[u]][node_dict[v]][self.cost] = cost
-            OD = np.random.choice(self.num_nodes, 2, replace=False)            
-            self.start = OD[0]
-            self.dest  = OD[1]
-            self.R1underbar = nx.shortest_path_length(self.graph, target=self.dest, weight=self.r1)
-            self.Cunderbar = nx.shortest_path_length(self.graph, target=self.dest, weight=self.cost)
-            self.maxR1 = self.R1underbar[self.start]*1.2
-            self.optimal = None
-            for path in nx.shortest_simple_paths(self.graph, self.start, self.dest, weight=self.cost):
-                cost = 0.0
-                res1 = 0.0
-                for (idx, n) in enumerate(path):
-                    if idx > 0:
-                        cost += self.graph[path[idx-1]][n][self.cost]
-                        res1 += self.graph[path[idx-1]][n][self.r1]
-                if res1 < self.maxR1:
-                    self.optimal = cost
-                    break
-            
-class ProblemPool:
-    def __init__(self, filename=None):
-        if filename == None:
-            #random graphs
-            self.num_nodes = 12
-            self.maxlevel = 10
-            self.xrange = 100
-            self.num_probs = 20
-            self.problems = []
-            for i in range(self.num_probs):
-                self.problems.append(Problem((self.num_nodes, None)))
-            
+    def __init__(self, filename, val_frac=0.7):
+        self.val_frac = val_frac
+        print "validation fraciton: {}".format(self.val_frac)  
+        
+        print "loading data..." 
+        self._load_data(filename)
+        print "creating splits..."
+        self._create_split()
+        print "shifting/scaling"
+        self._shift_scale()
+    def _load_data(self, filename):
+        f = h5py.File(filename, 'r')       
+        ri = f['graph1/route_info']
+        ti = f['graph1/traffic_info']
+        gs = f['graph1/graph_structure']
+        self.graphs = {"graph1":nx.DiGraph()}
+        self.problems = []
+        for link in gs:
+            self.graphs["graph1"].add_edge(link[0], link[1])
+        numsteps = ri.shape[ri.attrs["stepaxis"]-1]
+        numroutes = ri.shape[ri.attrs["routeaxis"]-1] 
+       
+        for step in xrange(numsteps):
+            for rid in xrange(numroutes):
+                self.problems.append(ProblemInstance(route=ri[step,rid,:]),traffic=ti[:,step,:])
+    def _create_split(self):
+        pass
+    def _shift_scale(self):
+        pass             
     def reset(self):
 class CsppEnv(gym.Env):
     metadata = {'render.modes': []}
