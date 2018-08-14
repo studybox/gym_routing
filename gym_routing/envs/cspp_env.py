@@ -2,91 +2,12 @@ import math
 import numpy as np
 import networkx as nx
 import gym
-import h5py
 from gym import error, spaces, utils
 from gym.utils import seeding
 MAX_ARRAY_LENGTH = 100
-class ProblemInstance:
-    def __init__(self, route, traffic):
-        self.route = route
-        self.traffic = traffic
-    def init(self, graph):
-        # initialize the graph with this problem instance
 
-
-class Problem:
-    def __init__(self, filename, val_frac=0.7):
-        self.val_frac = val_frac
-        print "validation fraciton: {}".format(self.val_frac)
-
-        print "loading data..."
-        self._load_data(filename)
-
-    def _load_data(self, filename):
-        f = h5py.File(filename, 'r')
-        ri = f['graph1/route_info']
-        ti = f['graph1/traffic_info']
-        gs = f['graph1/graph_structure']
-        self.graphs = {"graph1":nx.DiGraph()}
-        for link in gs:
-            self.graphs["graph1"].add_edge(link[0], link[1])
-        self.numsteps = ri.shape[ri.attrs["stepaxis"]-1]
-        self.numroutes = ri.shape[ri.attrs["routeaxis"]-1]
-        self.numproblems = self.numsteps*self.numroutes
-
-        self.numsteptrain = int(math.floor(self.val_frac*self.numsteps))
-        self.numroutetrain = int(math.floor(self.val_frac*self.numroutes))
-
-        self.numstepval = self.numsteps - self.numsteptrain
-        self.numrouteval = self.numroutes - self.numroutetrain
-
-        self.numtrain = self.numroutetrain * self.numsteptrain
-        self.numval = self.numproblems - self.numtrain
-
-        self.numstudy1 = self.numrouteval * self.numsteptrain #seen step unseen routes
-        self.numstudy2 = self.numroutetrain * self.numstepval #unseen step seen routes
-        self.numstudy3 = self.numrouteval * self.numstepval # both unseen
-        # shuffle data
-        stepp = np.random.permutation(self.numsteps)
-        routep = np.random.permutation(self.numroutes)
-
-        print "Shift and scale"
-        self._shift_scale(ti)
-
-        self.train = []
-        self.val = []
-        self.study1 = []
-        self.study2 = []
-        self.study3 = []
-        for i, step in enumerate(stepp):
-            for j, rid in enumerate(routep):
-                if i < self.numsteptrain and j < self.numroutetrain:
-                    self.train.append(ProblemInstance(route=ri[step,rid,:]),traffic=self.ti_scaled[:,step,:])
-                else:
-                    self.val.append(ProblemInstance(route=ri[step,rid,:]),traffic=self.ti_scaled[:,step,:])
-
-        for step in stepp[:self.numsteptrain]:
-            for rid in routep[self.numroutetrain:]:
-                self.study1.append(ProblemInstance(route=ri[step,rid,:]),traffic=ti_scaled[:,step,:])
-
-        for step in stepp[self.numsteptrain:]:
-            for rid in routep[:self.numroutetrain]:
-                self.study2.append(ProblemInstance(route=ri[step,rid,:]),traffic=ti_scaled[:,step,:])
-
-        for step in stepp[self.numsteptrain:]:
-            for rid in routep[self.numroutetrain:]:
-                self.study3.append(ProblemInstance(route=ri[step,rid,:]),traffic=ti_scaled[:,step,:])
-
-
-    def _shift_scale(self,ti):
-        self.shiftfeatures = np.mean(ti, axis=(0,1))
-        self.scalefeatures = np.std(ti, axis=(0,1))
-        assert(self.shiftfeatures.shape[0]==ti.shape[ti.attrs["featureaxis"]])
-        self.ti_scaled = (ti[:,:,:] - self.shiftfeatures)/self.scalefeatures
-    def reset(self):
 class CsppEnv(gym.Env):
     metadata = {'render.modes': []}
-
     def __init__(self):
         self.problempool = # load all the graph examples
         self.prunedistance = 1 # the maximum level to jump when pruning
