@@ -122,7 +122,8 @@ class Problem:
         self.shiftfeatures = np.mean(ti, axis=(0,1))
         self.scalefeatures = np.std(ti, axis=(0,1))
         assert(self.shiftfeatures.shape[0]==ti.shape[ti.attrs["featureaxis"]-1])
-        self.ti_scaled = (ti[:,:,:] - self.shiftfeatures)/self.scalefeatures
+        #self.ti_scaled = (ti[:,:,:] - self.shiftfeatures)/self.scalefeatures
+        self.ti_scaled = ti[:,:,:]
     def reset(self, **karg):
         # this function should reset the problem instance
         if "train" in karg:
