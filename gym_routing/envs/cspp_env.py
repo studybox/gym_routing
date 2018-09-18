@@ -61,7 +61,7 @@ class CsppEnv(gym.Env):
         done = False
         if self.pointer == 0 or curnode == self.problem.instance.dest:
             done = True
-        info = {}
+        info = {"Choices":self.nodelist[:]}
         return obs, reward, done, info
     def _respond_to_action(self, action):
         #assert action in self.nodelist[0:self.pointer], "%r (%s) invalid"%(action, type(action))
