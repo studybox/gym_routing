@@ -44,10 +44,13 @@ class ProblemInstance:
                     res1 += graph[path[idx-1]][n]['r1']
             if res1 <= self.maxR1:
                 self.optimal = cost
+                print("path find")
                 break
+            print("path not bounded")
 class Problem:
-    def __init__(self, filename, val_frac=0.7):
+    def __init__(self, filename, random_func, val_frac=0.7):
         self.val_frac = val_frac
+        self.np_random = random_func
         print "validation fraciton: {}".format(self.val_frac)
 
         print "loading data..."
@@ -58,12 +61,17 @@ class Problem:
         ri = f['graph1/route_info']
         ti = f['graph1/traffic_info']
         gs = f['graph1/graph_structure']
-        self.graphs = {"graph1":nx.DiGraph()}
+
+
+        self.graphs = {"graph1":nx.DiGraph(), "graph1_naive":nx.DiGraph()}
         for link in gs:
             self.graphs["graph1"].add_edge(link[0], link[1])
+        for idx, link in enumerate(self.graphs["graph1"].edges):
+            self.graphs["graph1"][link[0]][link[1]]["Index"] = idx
         for idx, node in enumerate(self.graphs["graph1"].nodes):
             self.graphs["graph1"].nodes[node]["Index"] = idx
         self.numnodes = {"graph1":len(self.graphs["graph1"].nodes())}
+        self.numedges = {"graph1":len(self.graphs["graph1"].edges())}
         self.numsteps = ri.shape[ri.attrs["stepaxis"]-1]
         self.numroutes = ri.shape[ri.attrs["routeaxis"]-1]
         self.numproblems = self.numsteps*self.numroutes
@@ -81,8 +89,8 @@ class Problem:
         self.numstudy2 = self.numroutetrain * self.numstepval #unseen step seen routes
         self.numstudy3 = self.numrouteval * self.numstepval # both unseen
         # shuffle data
-        stepp = np.random.permutation(self.numsteps)
-        routep = np.random.permutation(self.numroutes)
+        stepp = self.np_random.permutation(self.numsteps)
+        routep = self.np_random.permutation(self.numroutes)
         print "Shift and scale"
         self._shift_scale(ti)
 
@@ -145,7 +153,7 @@ class Problem:
         self.instance = self.train[trainidx]
         self.ptr_train += 1
     def reset_ptr_train(self):
-        self.permutation_train = np.random.permutation(self.numtrain)
+        self.permutation_train = self.np_random.permutation(self.numtrain)
         self.ptr_train = 0
     # Sample new problem for validation
     def next_val(self):
@@ -155,7 +163,7 @@ class Problem:
         self.instance = self.val[validx]
         self.ptr_val += 1
     def reset_ptr_val(self):
-        self.permutation_val = np.random.permutation(self.numval)
+        self.permutation_val = self.np_random.permutation(self.numval)
         self.ptr_val = 0
     # Sample new problem for study1
     def next_study1(self):
@@ -165,7 +173,7 @@ class Problem:
         self.instance = self.study1[study1idx]
         self.ptr_study1 += 1
     def reset_ptr_study1(self):
-        self.permutation_study1 = np.random.permutation(self.numstudy1)
+        self.permutation_study1 = self.np_random.permutation(self.numstudy1)
         self.ptr_study1 = 0
     # Sample new problem for study2
     def next_study2(self):
@@ -175,7 +183,7 @@ class Problem:
         self.instance = self.study2[study2idx]
         self.ptr_study2 += 1
     def reset_ptr_study2(self):
-        self.permutation_study2 = np.random.permutation(self.numstudy2)
+        self.permutation_study2 = self.np_random.permutation(self.numstudy2)
         self.ptr_study2 = 0
     # Sample new problem for study3
     def next_study3(self):
@@ -185,5 +193,5 @@ class Problem:
         self.instance = self.study3[study3idx]
         self.ptr_study3 += 1
     def reset_ptr_study3(self):
-        self.permutation_study3 = np.random.permutation(self.numstudy3)
+        self.permutation_study3 = self.np_random.permutation(self.numstudy3)
         self.ptr_study3 = 0

@@ -10,18 +10,25 @@ DATA = "/media/mSATA/UM/Upper routing simulation/SUMOdata/routingdataset.hdf5"
 class CsppEnv(gym.Env):
     metadata = {'render.modes': []}
     def __init__(self):
-        self.problem = Problem(DATA) # load all the graph examples
+        self.seed()
+        self.problem = Problem(DATA, self.np_random) # load all the graph examples
         self.prunedistance = 1 # the maximum level to jump when pruning
         self.pointer = 1
         self.ppointer = 0
         self.nodelist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
+        self.edgelist = []
         self.levellist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
         self.r1list = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.costlist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.path = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
+
         self.action_space = None
-        self.obervation_space = spaces.Box(low=0.0, high=2.0, shape=(self.problem.numnodes["graph1"], 2*self.problem.numnodes["graph1"]+4))#, dtype=np.float32)
+        #self.obervation_space = spaces.Box(low=0.0, high=2.0, shape=(self.problem.numnodes["graph1"], 2*self.problem.numnodes["graph1"]+4))#, dtype=np.float32)
+        self.obervation_space = spaces.Box(low=0.0, high=200.0, shape=(1, self.problem.numnodes["graph1"]*2+self.problem.numedges["graph1"]*4))#, dtype=np.float32)
         self.viewer = None
+    def seed(self, seed= None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
     def _draw_obs(self, curnode):
         actionopts = np.zeros((self.problem.numnodes["graph1"],), dtype=np.float32)
         for (index, value) in enumerate(self.nodelist[0:self.pointer]):
@@ -37,7 +44,7 @@ class CsppEnv(gym.Env):
         #TODO change nodestate cost layer
         #for index in range(self.problem.num_nodes):
         #    nodestate[index, 2] = self.problem.mincost[index]/self.problem.mincost[self.problem.dest]
-        for (index, value) in enumerate(self.nodelist[0:self.pointer]):
+        for (index, value) in enumerate(self.nodelist):
             nindex = self.problem.graphs["graph1"].nodes[value]["Index"]
             if value != self.problem.instance.dest:
                 nodestate[nindex, 0] = self.levellist[index]#/float(self.problem.maxlevel) #TODO change maxlevel
@@ -65,11 +72,11 @@ class CsppEnv(gym.Env):
         return obs, reward, done, info
     def _respond_to_action(self, action):
         #assert action in self.nodelist[0:self.pointer], "%r (%s) invalid"%(action, type(action))
-        assert action in self.nodelist, "%r (%s) invalid"%(action, type(action))
+        assert action in self.edgelist, "%r (%s) invalid"%(action, type(action))
         # get the last occurrence, this favors pulse over prune
         #index = np.where(self.nodelist == action)[0][-1]
         actindexlist = []
-        for idx, act in enumerate(self.nodelist):
+        for idx, act in enumerate(self.edgelist):
             if act == action:
                 actindexlist.append(idx)
         index = actindexlist[-1]
@@ -80,12 +87,14 @@ class CsppEnv(gym.Env):
         for idx in range(index, len(self.levellist)):
             if self.levellist[idx] > levelthres:
                 self.nodelist = self.nodelist[0:idx]
+                self.edgelist = self.edgelist[0:idx]
                 self.levellist = self.levellist[0:idx]
                 self.r1list = self.r1list[0:idx]
                 self.costlist = self.costlist[0:idx]
                 break
         self.pointer = len(self.nodelist)-1
         return (self.nodelist.pop(index),
+                self.edgelist.pop(index),
                 self.levellist.pop(index),
                 self.r1list.pop(index),
                 self.costlist.pop(index))
@@ -110,6 +119,7 @@ class CsppEnv(gym.Env):
                     self.pointer += 1
                     #self.nodelist[self.pointer-1] = v
                     self.nodelist.append(v)
+                    self.edgelist.append(self.problem.graphs["graph1"][u][v]['Index'])
                     #self.levellist[self.pointer-1] = newlevel
                     self.levellist.append(newlevel)
                     #self.r1list[self.pointer-1] = newr1
@@ -128,7 +138,7 @@ class CsppEnv(gym.Env):
                 #self.problem.instance.finalpath = self.path[0:self.ppointer]
                 self.problem.instance.finalpath = self.path
 
-                assert(len(path)==self.ppointer)
+                assert(len(self.path)==self.ppointer)
                 self.problem.instance.r1star = curr1
                 self.problem.instance.primalbound = curcost
     def _change_labels(self, r1, c, v):
@@ -151,7 +161,7 @@ class CsppEnv(gym.Env):
                 return True
             return False
     def step(self, action):
-        curnode, curlevel, curr1, curcost = self._respond_to_action(action)
+        curnode, curedge, curlevel, curr1, curcost = self._respond_to_action(action)
         if self.ppointer >= curlevel:
             for i in range(curlevel-1, self.ppointer):
                 self.problem.graphs["graph1"].node[self.path[i]]['visited'] = 0
@@ -164,6 +174,7 @@ class CsppEnv(gym.Env):
         self.pointer = 1
         self.ppointer = 0
         self.nodelist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
+        self.edgelist = []
         self.levellist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
         self.r1list = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.costlist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
@@ -200,13 +211,60 @@ class CsppEnv(gym.Env):
         self.pointer -= 1
         self._pulse(curr1, curcost, curlevel, curnode)
         return self._draw_obs(curnode)
-    def render(self, mode='human', close=False):
-        if mode == 'human':
+    def render(self, mode='human'):
+
+        if self.viewer is None:
+            import render
+            import constants
+            datamap, xx, yy, xl, yb = constants.create_map(self.problem.graphs["graph1"])
+            self.xx = xx
+            self.yy = yy
             screen_width = 600
-            screen_height = 400
-            #world_width = self.problem.xrange
-            super(MyEnv, self).render(mode=mode)
-        elif mode == 'rgb_array':
-            super(MyEnv, self).render(mode=mode)
-        else:
-            super(MyEnv, self).render(mode=mode)
+            screen_height = 800
+
+            scalex = screen_width/xx
+            scaley = screen_height/yy
+            self.scalex = scalex
+            self.scaley = scaley
+            self.viewer = render.Viewer(screen_width, screen_height)
+            self.network = {"p":{}, "r":{}}
+
+            for edge in self.problem.graphs["graph1"].edges:
+
+                road = render.Line(((datamap[edge[0]][0]-xl)*scalex, (datamap[edge[0]][1]-yb)*scaley),
+                                   ((datamap[edge[1]][0]-xl)*scalex, (datamap[edge[1]][1]-yb)*scaley))
+                self.network["r"][self.problem.graphs["graph1"][edge[0]][edge[1]]["Index"]] = road
+                self.viewer.add_geom(road)
+            for node in self.problem.graphs["graph1"].nodes:
+                junction = render.make_circle(2.5,15,(datamap[node][0]-xl)*scalex,(datamap[node][1]-yb)*scaley, True)
+                self.network["p"][node] = junction
+                self.viewer.add_geom(junction)
+        for node in self.problem.graphs["graph1"].nodes:
+            self.network["p"][node].set_color(0.1, 0.1, 0.8)
+        self.network["p"][self.problem.instance.start].set_color(.8,.6,.4)
+        self.network["p"][self.problem.instance.dest].set_color(.5,.8,.5)
+        for edge in self.problem.graphs["graph1"].edges:
+            eidx = self.problem.graphs["graph1"][edge[0]][edge[1]]["Index"]
+
+            if eidx in self.edgelist:
+                self.network["r"][eidx].set_color(0.0,1.0,0.0)
+                if (edge[1], edge[0]) in self.problem.graphs["graph1"].edges:
+                    eidx2 = self.problem.graphs["graph1"][edge[1]][edge[0]]["Index"]
+                    self.network["r"][eidx2].set_color(0.0,1.0,0.0)
+            else:
+                if (edge[1], edge[0]) in self.problem.graphs["graph1"].edges:
+                    eidx2 = self.problem.graphs["graph1"][edge[1]][edge[0]]["Index"]
+                if eidx2 not in self.edgelist:
+                    self.network["r"][eidx].set_color(0.75,0.75,0.75)
+        for idx in range(len(self.path)-1):
+            eidx = self.problem.graphs["graph1"][self.path[idx]][self.path[idx+1]]["Index"]
+            self.network["r"][eidx].set_color(1.0, 0.0, 0.0)
+            if (self.path[idx+1], self.path[idx]) in self.problem.graphs["graph1"].edges:
+                eidx2 = self.problem.graphs["graph1"][self.path[idx+1]][self.path[idx]]["Index"]
+                self.network["r"][eidx2].set_color(1.0,0.0,0.0)
+        return self.viewer.render(return_rgb_array = mode=='rgb_array')
+
+    def close(self):
+        if self.viewer:
+            self.viewer.close()
+            self.viewer = None
