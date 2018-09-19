@@ -29,7 +29,7 @@ class ProblemInstance:
             graph[u][v]['c'] = self.traffic[idx,3] if self.traffic[idx,3] > 0 else 0.0
         self.start = int(self.route[1])
         self.dest = int(self.route[2])
-
+        self.tstep = int(self.route[0])
         self.R1underbar = nx.shortest_path_length(graph, target=self.dest, weight='r1')
         self.Cunderbar = nx.shortest_path_length(graph, target=self.dest, weight='c')
         self.maxR1 = self.R1underbar[self.start]*1.2
