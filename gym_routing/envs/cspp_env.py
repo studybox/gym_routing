@@ -48,7 +48,7 @@ class CsppEnv(gym.Env):
         #    nodestate[pindex, 0] = 1.0
 
 
-        obs = np.concatenate((self.nodestate, self.edgestate, self.outedges, self.u), axis=-1)
+        obs = np.concatenate((self.nodestate, self.edgestate, self.outedges, self.outnodes, self.u), axis=-1)
         reward = 0.0
         if len(self.edgelist) == 0:
             reward = -1.0
@@ -188,12 +188,19 @@ class CsppEnv(gym.Env):
         self.nodestate2 = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.float32) #out_degree
 
         self.outedges = []
+        self.outnodes = []
         for node in self.problem.graphs["graph1"].nodes:
             for (u, v) in self.problem.graphs["graph1"].out_edges(node):
                 self.outedges.append(self.problem.graphs["graph1"][u][v]["Index"])
+                self.outnodes.append(self.problem.graphs["graph1"].nodes[v]["Index"])
         assert(len(self.outedges) == self.problem.numedges["graph1"])
         self.outedges = np.array(self.outedges)
         self.outedges = self.outedges[np.newaxis, :]
+        self.outnodes = np.array(self.outnodes)
+        self.outnodes = self.outnodes[np.newaxis, :]
+        
+        
+        
         self.u = np.zeros((1,2))
         self.u[0,0] = self.problem.instance.maxR1
         self.u[0,1] = self.problem.instance.tstep
