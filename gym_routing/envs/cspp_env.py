@@ -21,10 +21,10 @@ class CsppEnv(gym.Env):
         self.r1list = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.costlist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.path = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
-
+        self.numglobals = 2
         self.action_space = None
         #self.obervation_space = spaces.Box(low=0.0, high=2.0, shape=(self.problem.numnodes["graph1"], 2*self.problem.numnodes["graph1"]+4))#, dtype=np.float32)
-        self.obervation_space = spaces.Box(low=0.0, high=200.0, shape=(1, self.problem.numnodes["graph1"]*2+self.problem.numedges["graph1"]*4))#, dtype=np.float32)
+        self.obervation_space = spaces.Box(low=0.0, high=200.0, shape=(self.problem.numnodes["graph1"]+self.problem.numedges["graph1"]*4+self.numglobals))#, dtype=np.float32)
         self.viewer = None
     def seed(self, seed= None):
         self.np_random, seed = seeding.np_random(seed)
@@ -187,19 +187,24 @@ class CsppEnv(gym.Env):
 
 
         self.nodestate1 = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.float32) #destination
-        self.outdegrees = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.float32) #out_degree
+        self.outdegrees = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.int32) #out_degree
 
         self.outedges = []
         self.outnodes = []
+        self.edgev = []
         for node in self.problem.graphs["graph1"].nodes:
+            neighbor_nodes = []
+            neighbor_edges = []
             for (u, v) in self.problem.graphs["graph1"].out_edges(node):
-                self.outedges.append(self.problem.graphs["graph1"][u][v]["Index"])
-                self.outnodes.append(self.problem.graphs["graph1"].nodes[v]["Index"])
-        assert(len(self.outedges) == self.problem.numedges["graph1"])
-        self.outedges = np.array(self.outedges)
-        self.outedges = self.outedges[np.newaxis, :]
-        self.outnodes = np.array(self.outnodes)
-        self.outnodes = self.outnodes[np.newaxis, :]
+                neighbor_edges.append(self.problem.graphs["graph1"][u][v]["Index"])
+                neighbor_nodes.append(self.problem.graphs["graph1"].nodes[v]["Index"])
+            self.outedges.append(neighbor_edges)
+            self.outnodes.append(neighbor_nodes)
+        for (u, v) in self.problem.graphs["graph1"].edges:
+            self.edgev.append(self.problem.graphs["graph1"].nodes[v]["Index"])
+        print len(self.outedges)
+        assert(len(self.outedges) == self.problem.numnodes["graph1"])
+        self.edgev = np.array(self.edgev, dtype=np.int32)
 
 
 
@@ -207,9 +212,11 @@ class CsppEnv(gym.Env):
         self.u[0,0] = self.problem.instance.maxR1
         self.u[0,1] = self.problem.instance.tstep
 
-        #startidx = self.problem.graphs["graph1"].nodes[self.problem.instance.start]["Index"]
+        startidx = self.problem.graphs["graph1"].nodes[self.problem.instance.start]["Index"]
         destidx = self.problem.graphs["graph1"].nodes[self.problem.instance.dest]["Index"]
         self.nodestate1[0, destidx] = 2.0
+        self.nodestate1[0, startidx] = 1.0
+
         for idx , node in enumerate(self.problem.graphs["graph1"].nodes):
             self.outdegrees[0, idx] = self.problem.graphs["graph1"].out_degree(node)
 
@@ -228,7 +235,7 @@ class CsppEnv(gym.Env):
         for idx, edgeidx in enumerate(self.edgelist):
             self.edgestate4[0, edgeidx] = 0.1 * self.levellist[idx]
         self.edgestate = np.concatenate((self.edgestate1, self.edgestate2, self.edgestate3, self.edgestate4), axis=-1)
-        self.nodestate = np.concatenate((self.nodestate1), axis=-1)
+        self.nodestate = self.nodestate1
         return self._draw_obs(curnode)
     def render(self, mode='human'):
 
