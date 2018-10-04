@@ -4,9 +4,10 @@ import networkx as nx
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
-from problem import Problem
+from gym_routing.envs.problem import Problem
 MAX_ARRAY_LENGTH = 100
-DATA = "/media/mSATA/UM/Upper routing simulation/SUMOdata/routingdataset.hdf5"
+#DATA = "/media/mSATA/UM/Upper routing simulation/SUMOdata/routingdataset.hdf5"
+DATA = "/home/boqi/Documents/Research/CSPP/gym_routing/routingdataset.hdf5"
 class CsppEnv(gym.Env):
     metadata = {'render.modes': []}
     def __init__(self):
@@ -21,10 +22,11 @@ class CsppEnv(gym.Env):
         self.r1list = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.costlist = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.float32)
         self.path = []#np.ndarray((MAX_ARRAY_LENGTH,), dtype=np.int32)
-        self.numglobals = 2
+        self.numglobals = 1
         self.action_space = None
         #self.obervation_space = spaces.Box(low=0.0, high=2.0, shape=(self.problem.numnodes["graph1"], 2*self.problem.numnodes["graph1"]+4))#, dtype=np.float32)
-        self.obervation_space = spaces.Box(low=0.0, high=200.0, shape=(self.problem.numnodes["graph1"]+self.problem.numedges["graph1"]*4+self.numglobals))#, dtype=np.float32)
+        self.observation_space = spaces.Box(low=0.0, high=200.0,
+                                            shape=(self.problem.numnodes["graph1"]+self.problem.numedges["graph1"]*4+self.numglobals+2,), dtype=np.float32)
         self.viewer = None
     def seed(self, seed= None):
         self.np_random, seed = seeding.np_random(seed)
@@ -47,18 +49,22 @@ class CsppEnv(gym.Env):
         #    pindex = self.problem.graphs["graph1"].nodes[p]["Index"]
         #    nodestate[pindex, 0] = 1.0
 
+        done = False
+        if len(self.edgelist) == 0 or curnode == self.problem.instance.dest:
+            done = True
 
-        obs = np.concatenate((self.nodestate, self.edgestate, self.u), axis=-1)
+
         reward = 0.0
         if len(self.edgelist) == 0:
             reward = -1.0
         if curnode == self.problem.instance.dest:
-            reward = np.exp(np.abs(self.problem.instance.optimal-self.problem.instance.primalbound))
+            reward = np.exp(-(self.problem.instance.primalbound-self.problem.instance.optimal))
         #if self.levellist[index] == self.levellist[0:self.pointer][-1]:
         #    reward
-        done = False
-        if len(self.edgelist) == 0 or curnode == self.problem.instance.dest:
-            done = True
+        if done:
+            self.edgestate4[-1] = 1.0
+        self.edgestate = np.concatenate(((self.edgestate1-self.problem.r1m)/self.problem.r1s, (self.edgestate2-self.problem.cm)/self.problem.cs, self.edgestate3, self.edgestate4), axis=-1)
+        obs = np.concatenate((self.nodestate, self.edgestate, self.u), axis=-1)
         info = {}
         return obs, reward, done, info
     def _respond_to_action(self, action):
@@ -102,7 +108,8 @@ class CsppEnv(gym.Env):
                 newr1 = curr1 + self.problem.graphs["graph1"][u][v]['r1']
                 newcost = curcost + self.problem.graphs["graph1"][u][v]['c']
                 newlevel = curlevel + 1
-                if (newr1 <= (self.problem.instance.maxR1-self.problem.instance.R1underbar[v])) and \
+                r1underbar = np.inf if v not in self.problem.instance.R1underbar else self.problem.instance.R1underbar[v]
+                if (newr1 <= (self.problem.instance.maxR1-r1underbar)) and \
                     (not self._check_labels(newr1, newcost, v)) and \
                     (self.problem.graphs["graph1"].node[v]['visited'] == 0):
                     #(newcost <= (self.problem.instance.primalbound-self.problem.instance.Cunderbar[v])) and \
@@ -153,21 +160,30 @@ class CsppEnv(gym.Env):
             return False
     def step(self, action):
         curnode, curedge, curlevel, curr1, curcost = self._respond_to_action(action)
+        assert(len(self.path) == self.ppointer)
+        #print("curlevel:", curlevel)
+        #print("curpath:", self.path)
         if self.ppointer >= curlevel:
             for i in range(curlevel-1, self.ppointer):
+                #try:
                 self.problem.graphs["graph1"].node[self.path[i]]['visited'] = 0
-                self.path.pop()
+                #except:
+                #    print("error: ", i)
+                #    print("error path: ", self.path)
+                #    assert(1==2)
+
             self.ppointer = curlevel - 1
+            self.path = self.path[0:self.ppointer]
             assert(len(self.path) == self.ppointer)
         self._pulse(curr1, curcost, curlevel, curnode)
-        self.edgestate3 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
-        self.edgestate4 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
+        self.edgestate3 = np.zeros((self.problem.numedges["graph1"]+1), dtype=np.float32)
+        self.edgestate4 = np.zeros((self.problem.numedges["graph1"]+1), dtype=np.float32)
         for idx, edgeidx in enumerate(self.edgelist):
-            self.edgestate4[0, edgeidx] = 0.1 * self.levellist[idx]
+            self.edgestate4[edgeidx] = 0.1 * self.levellist[idx]
         for idx in range(len(self.path)-1):
             eidx = self.problem.graphs["graph1"][self.path[idx]][self.path[idx+1]]["Index"]
-            self.edgestate3[0, eidx] = 1.0
-        self.edgestate = np.concatenate((self.edgestate1, self.edgestate2, self.edgestate3, self.edgestate4), axis=-1)
+            self.edgestate3[eidx] = 1.0
+
         return self._draw_obs(curnode)
     def reset(self, **kargs):
         self.pointer = 1
@@ -179,15 +195,17 @@ class CsppEnv(gym.Env):
         self.costlist = []
         self.path = []
         self.problem.reset(**kargs)
+        startidx = self.problem.graphs["graph1"].nodes[self.problem.instance.start]["Index"]
+        destidx = self.problem.graphs["graph1"].nodes[self.problem.instance.dest]["Index"]
         #populate edgestate
-        self.edgestate1 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
-        self.edgestate2 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
-        self.edgestate3 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
-        self.edgestate4 = np.zeros((1, self.problem.numedges["graph1"]), dtype=np.float32)
+        self.edgestate1 = np.zeros((self.problem.numedges["graph1"]), dtype=np.float32)
+        self.edgestate2 = np.zeros((self.problem.numedges["graph1"]), dtype=np.float32)
+        self.edgestate3 = np.zeros((self.problem.numedges["graph1"]+1), dtype=np.float32)
+        self.edgestate4 = np.zeros((self.problem.numedges["graph1"]+1), dtype=np.float32)
 
 
-        self.nodestate1 = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.float32) #destination
-        self.outdegrees = np.zeros((1, self.problem.numnodes["graph1"]), dtype=np.int32) #out_degree
+        self.nodestate1 = np.zeros((self.problem.numnodes["graph1"]), dtype=np.float32) #destination
+        self.outdegrees = np.zeros((self.problem.numnodes["graph1"]), dtype=np.int32) #out_degree
 
         self.outedges = []
         self.outnodes = []
@@ -202,23 +220,23 @@ class CsppEnv(gym.Env):
             self.outnodes.append(neighbor_nodes)
         for (u, v) in self.problem.graphs["graph1"].edges:
             self.edgev.append(self.problem.graphs["graph1"].nodes[v]["Index"])
-        print len(self.outedges)
+        self.edgev.append(destidx)
+        #print len(self.outedges)
         assert(len(self.outedges) == self.problem.numnodes["graph1"])
         self.edgev = np.array(self.edgev, dtype=np.int32)
 
 
 
-        self.u = np.zeros((1,2))
-        self.u[0,0] = self.problem.instance.maxR1
-        self.u[0,1] = self.problem.instance.tstep
+        self.u = np.zeros((1))
+        #self.u[0] = self.problem.instance.maxR1
+        self.u[0] = (self.problem.instance.tstep-self.problem.Tm)/self.problem.Ts
 
-        startidx = self.problem.graphs["graph1"].nodes[self.problem.instance.start]["Index"]
-        destidx = self.problem.graphs["graph1"].nodes[self.problem.instance.dest]["Index"]
-        self.nodestate1[0, destidx] = 2.0
-        self.nodestate1[0, startidx] = 1.0
+
+        self.nodestate1[destidx] = 2.0
+        self.nodestate1[startidx] = 1.0
 
         for idx , node in enumerate(self.problem.graphs["graph1"].nodes):
-            self.outdegrees[0, idx] = self.problem.graphs["graph1"].out_degree(node)
+            self.outdegrees[idx] = self.problem.graphs["graph1"].out_degree(node)
 
         #Reset the graph to initial point
         self.pointer = 1
@@ -230,13 +248,15 @@ class CsppEnv(gym.Env):
         self.pointer -= 1
         self._pulse(curr1, curcost, curlevel, curnode)
         for idx, (u, v) in enumerate(self.problem.graphs["graph1"].edges):
-            self.edgestate1[0, idx] = self.problem.graphs["graph1"][u][v]['r1']
-            self.edgestate2[0, idx] = self.problem.graphs["graph1"][u][v]['c']
+            self.edgestate1[idx] = self.problem.graphs["graph1"][u][v]['r1']
+            self.edgestate2[idx] = self.problem.graphs["graph1"][u][v]['c']
         for idx, edgeidx in enumerate(self.edgelist):
-            self.edgestate4[0, edgeidx] = 0.1 * self.levellist[idx]
+            self.edgestate4[edgeidx] = 0.1 * self.levellist[idx]
+        if len(self.edgelist) == 0 or curnode == self.problem.instance.dest:
+            self.edgestate4[-1] = 1.0
         self.edgestate = np.concatenate((self.edgestate1, self.edgestate2, self.edgestate3, self.edgestate4), axis=-1)
         self.nodestate = self.nodestate1
-        return self._draw_obs(curnode)
+        return np.concatenate((self.nodestate, self.edgestate, self.u), axis=-1)
     def render(self, mode='human'):
 
         if self.viewer is None:

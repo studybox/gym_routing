@@ -44,16 +44,16 @@ class ProblemInstance:
                     res1 += graph[path[idx-1]][n]['r1']
             if res1 <= self.maxR1:
                 self.optimal = cost
-                print("path find")
+                #print("path find")
                 break
-            print("path not bounded")
+        #print("path not bounded")
 class Problem:
     def __init__(self, filename, random_func, val_frac=0.7):
         self.val_frac = val_frac
         self.np_random = random_func
-        print "validation fraciton: {}".format(self.val_frac)
+        print("validation fraciton: {}".format(self.val_frac))
 
-        print "loading data..."
+        print("loading data...")
         self._load_data(filename)
 
     def _load_data(self, filename):
@@ -61,7 +61,6 @@ class Problem:
         ri = f['graph1/route_info']
         ti = f['graph1/traffic_info']
         gs = f['graph1/graph_structure']
-
 
         self.graphs = {"graph1":nx.DiGraph(), "graph1_naive":nx.DiGraph()}
         for link in gs:
@@ -91,7 +90,7 @@ class Problem:
         # shuffle data
         stepp = self.np_random.permutation(self.numsteps)
         routep = self.np_random.permutation(self.numroutes)
-        print "Shift and scale"
+        print("Shift and scale")
         self._shift_scale(ti)
 
         self.train = []
@@ -127,11 +126,32 @@ class Problem:
 
 
     def _shift_scale(self,ti):
-        self.shiftfeatures = np.mean(ti, axis=(0,1))
-        self.scalefeatures = np.std(ti, axis=(0,1))
+        ti_copy = ti[:,:,:]
+        for i in range(ti_copy.shape[0]):
+            for j in range(ti_copy.shape[1]):
+                if ti_copy[i,j,1] > 200:
+                    ti_copy[i,j,1] = 200
+                if ti_copy[i,j,1] < 0:
+                    ti_copy[i,j,1] = -ti_copy[i,j,1]
+                if ti_copy[i,j,2] < 0:
+                    ti_copy[i,j,2] = 0.0
+                if ti_copy[i,j,3] < 0:
+                    ti_copy[i,j,3] = 0.0
+                if ti_copy[i,j,4] < 0:
+                    ti_copy[i,j,4] = 0.0
+        self.shiftfeatures = np.mean(ti_copy, axis=(0,1))
+        self.scalefeatures = np.std(ti_copy, axis=(0,1))
+        self.r1m = self.shiftfeatures[1]
+        self.r1s = self.scalefeatures[1]
+
+        self.cm = self.shiftfeatures[3]
+        self.cs = self.scalefeatures[3]
+
+        self.Tm = self.shiftfeatures[0]
+        self.Ts = self.scalefeatures[0]
         assert(self.shiftfeatures.shape[0]==ti.shape[ti.attrs["featureaxis"]-1])
         #self.ti_scaled = (ti[:,:,:] - self.shiftfeatures)/self.scalefeatures
-        self.ti_scaled = ti[:,:,:]
+        self.ti_scaled = ti_copy[:,:,:]
     def reset(self, **karg):
         # this function should reset the problem instance
         if "train" in karg:
@@ -152,6 +172,8 @@ class Problem:
         self.train[trainidx].reset(self.graphs["graph1"])
         self.instance = self.train[trainidx]
         self.ptr_train += 1
+        if self.ptr_train >= self.numtrain:
+            self.reset_ptr_train()
     def reset_ptr_train(self):
         self.permutation_train = self.np_random.permutation(self.numtrain)
         self.ptr_train = 0
